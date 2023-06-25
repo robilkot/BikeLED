@@ -18,10 +18,12 @@ void setup()
 
   FastLED.addLeds<WS2812B, LedPin, GRB>(leds, LedCount).setCorrection(TypicalLEDStrip);
   FastLED.setMaxPowerInVoltsAndMilliamps(5,2100); 
-  FastLED.setBrightness(15);
+  FastLED.setBrightness(20);
 
   // Serial.begin(57600);
   // Serial.setTimeout(10);
+
+  random16_set_seed(analogRead(A1)); // Get noise from not connected A1
 }
 
 void shiftLeds()
@@ -31,7 +33,7 @@ void shiftLeds()
   }
 }
 
-void updateLights(uint8_t speed)
+void updateLights(uint16_t speed)
 {
   static bool idleMode = true;
   static uint8_t waveArg1 = 0;
@@ -45,6 +47,8 @@ void updateLights(uint8_t speed)
     idleMode = true;
   }
 
+  uint8_t sin1 = sin8(waveArg1);
+
   if(transitionCounter) {
     shiftLeds();
     leds[0].fadeToBlackBy(TransitionSpeed);
@@ -56,22 +60,28 @@ void updateLights(uint8_t speed)
     // fill_solid(leds, LedCount, CHSV( 0, sin8(waveArg) / 2 + 100, sin8(waveArg) / 2 + 100 ));
     // blur1d(leds,LedCount, 120);
 
-  uint8_t sin1 = sin8(waveArg1);
-
   if(idleMode)
   { 
-    shiftLeds();
-    leds[0] = CHSV( 0, 255, sin1 / 2 + 100 );
+  // Serial.println("idle");
+    for(uint8_t i = 0; i < 3; i++) {
+      shiftLeds();
+      leds[0] = CHSV( 0, 255, sin1 / 2 + 100 );
+    }
+    //float k = 255 - transitionCounter.r;
+    //for(auto& x : leds) x = toFill % k;
   }
   else {
+    // Serial.println("ride");
     shiftLeds();
-    leds[0] = CHSV( sin1 * 80 / 255 + 70, 255, 200 );
+    // leds[0] = CHSV( sin8(waveArg1 * speed / 120.) * 80 / 255 + 70, 255, 180 );
+    leds[0] = CHSV( sin8(waveArg1) * 80 / 255 + 70, 255, 180 );
 
     // Splashes
-    // leds[random(0, LedCount)] = CHSV(random(0, 256), 255, random(100, 256));
-    // blur1d(leds, LedCount, 120);
-    // for(auto& x : leds) x.fadeToBlackBy(10);
+    // leds[random16(0, LedCount)] = CHSV(random16(0, 256), 255, random16(150, 256) * (255 - transitionCounter.r) / 255.);
+    // blur1d(leds, LedCount, 160);
+    // for(auto& x : leds) x.fadeToBlackBy(2);
   }
+
 
   waveArg1++;
 
@@ -119,13 +129,23 @@ void updateLights(uint8_t speed)
 
 void loop()
 {
-  static uint8_t speed = 0;
+  static uint16_t speed = 1;
 
-  if(Serial.available()) {
-    speed = Serial.read() - '0';
-    Serial.print("speed ");
-    Serial.println(speed);  
+  static bool trigger = 0;
+  static bool triggerPrev = 0;
+
+  triggerPrev = trigger;
+  trigger = analogRead(TachoPin) < 100;
+  
+  if(trigger && !triggerPrev) { // When falling from 1 (pull-up resistor) to 0
+    speed = !speed;
   }
+
+  // if(Serial.available()) {
+  //   speed = Serial.parseInt();
+  //   Serial.print("speed ");
+  //   Serial.println(speed);  
+  // }
 
   static TimerMs updateLightsTimer(10, 1, 1);
 
