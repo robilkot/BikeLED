@@ -6,8 +6,10 @@ const uint8_t LedCount = 120;
 const uint8_t TransitionSpeed = 30;
 
 const uint8_t TachoPin = A0;
-const uint16_t SpeedMeasureInterval = 1000;
-const uint8_t WheelRadius = 255; // Diameter ~510 mm
+const uint16_t SpeedMeasureInterval = 900;
+const float WheelRadius = 0.255; // Diameter ~510 mm
+
+const uint8_t RedAmplitude = 200;
 
 CRGB leds[LedCount];
 
@@ -20,8 +22,8 @@ void setup()
   FastLED.setMaxPowerInVoltsAndMilliamps(5,2100); 
   FastLED.setBrightness(20);
 
-  // Serial.begin(57600);
-  // Serial.setTimeout(10);
+  Serial.begin(57600);
+  Serial.setTimeout(10);
 
   random16_set_seed(analogRead(A1)); // Get noise from not connected A1
 }
@@ -39,7 +41,7 @@ void updateLights(uint16_t speed)
   static uint8_t waveArg1 = 0;
   static CRGB transitionCounter(255,255,255);
 
-  if(speed > 0) {
+  if(speed > 20) {
     if(idleMode) transitionCounter = CRGB(255,255,255);
     idleMode = false;
   } else {
@@ -65,7 +67,8 @@ void updateLights(uint16_t speed)
   // Serial.println("idle");
     for(uint8_t i = 0; i < 3; i++) {
       shiftLeds();
-      leds[0] = CHSV( 0, 255, sin1 / 2 + 100 );
+      uint16_t value = sin1 * RedAmplitude / 255  + 255 - RedAmplitude;
+      leds[0] = CHSV(0, 255, value);
     }
     //float k = 255 - transitionCounter.r;
     //for(auto& x : leds) x = toFill % k;
@@ -73,8 +76,9 @@ void updateLights(uint16_t speed)
   else {
     // Serial.println("ride");
     shiftLeds();
-    // leds[0] = CHSV( sin8(waveArg1 * speed / 120.) * 80 / 255 + 70, 255, 180 );
-    leds[0] = CHSV( sin8(waveArg1) * 80 / 255 + 70, 255, 180 );
+    uint8_t hue = sin8(waveArg1 * (float) speed / 500) * 80 / 255 + 70;
+    leds[0] = CHSV(hue, 255, 180 );
+    // leds[0] = CHSV( sin8(waveArg1) * 80 / 255 + 70, 255, 180 );
 
     // Splashes
     // leds[random16(0, LedCount)] = CHSV(random16(0, 256), 255, random16(150, 256) * (255 - transitionCounter.r) / 255.);
@@ -88,58 +92,62 @@ void updateLights(uint16_t speed)
   FastLED.show();
 }
 
-// float updateSpeed()
-// {
-//   static bool trigger = 0;
-//   static bool triggerPrev = 0;
-//   static uint16_t rotations = 0;
-//   static uint16_t rotationsPrev = 0;
-//   static float v1 = 0, v2 = 0, v3 = 0, v = 0;
-
-//   triggerPrev = trigger;
-//   trigger = analogRead(TachoPin) < 100;
-  
-//   if(trigger && !triggerPrev) { // When falling from 1 (pull-up resistor) to 0
-//     rotations++;
-//   }
-
-//   static TimerMs updateSpeedTimer(SpeedMeasureInterval, 1, 1);
-
-//   if(updateSpeedTimer.elapsed()) {
-//     uint16_t dRotations = rotations - rotationsPrev;
-
-//     v3 = v2;
-//     v2 = v1;
-//     v1 = 2 * PI * WheelRadius * dRotations * 1000 / SpeedMeasureInterval * 3.6; // In km/h
-//     v = (v1 + v2 + v3) / 3.;
-//     if(v < 1) v3 = v2 = v1 = v = 0;
-
-//     if(rotations > 65000) { // Overflow protection for correct maths on dRotations
-//       rotations = dRotations;
-//       rotationsPrev = 0;
-//     } else  {
-//       rotationsPrev = rotations; 
-//     }
-
-//     updateSpeedTimer.start();
-//   }
-
-//   return v;
-// }
-
-void loop()
+int getSpeed()
 {
-  static uint16_t speed = 1;
-
   static bool trigger = 0;
   static bool triggerPrev = 0;
+  static uint16_t rotations = 0;
+  static uint16_t rotationsPrev = 0;
+
+  static uint16_t v1 = 0,
+                  v2 = 0,
+                  v3 = 0,
+                  v4 = 0,
+                  v = 0;
 
   triggerPrev = trigger;
   trigger = analogRead(TachoPin) < 100;
   
   if(trigger && !triggerPrev) { // When falling from 1 (pull-up resistor) to 0
-    speed = !speed;
+    rotations++;
   }
+
+  static TimerMs updateSpeedTimer(SpeedMeasureInterval, 1, 1);
+
+  if(updateSpeedTimer.elapsed()) {
+    uint16_t dRotations = rotations - rotationsPrev;
+
+    v4 = v3;
+    v3 = v2;
+    v2 = v1;
+    v1 = 2 * PI * WheelRadius * dRotations * 1000 / SpeedMeasureInterval * 36; // In km/h
+    v = (v1 + v2 + v3 + v4) / 4;
+    if(v < 15) v4 = v3 = v2 = v1 = v = 0;
+    // Serial.print(v1);
+    // Serial.print(" ");
+    // Serial.print(v2);
+    // Serial.print(" ");
+    // Serial.print(v3);
+    // Serial.print(" ");
+    // Serial.print(v4);
+    // Serial.print(" ");
+    // Serial.println(v);
+
+    if(rotations > 65000) { // Overflow protection for correct maths on dRotations
+      rotations = dRotations;
+      rotationsPrev = 0;
+    } else  {
+      rotationsPrev = rotations; 
+    }
+
+    updateSpeedTimer.start();
+  }
+
+  return v;
+}
+
+void loop()
+{
 
   // if(Serial.available()) {
   //   speed = Serial.parseInt();
@@ -148,6 +156,9 @@ void loop()
   // }
 
   static TimerMs updateLightsTimer(10, 1, 1);
+  static uint16_t speed = 0;
+
+  speed = getSpeed();
 
   if(updateLightsTimer.elapsed()) {
     updateLights(speed);
