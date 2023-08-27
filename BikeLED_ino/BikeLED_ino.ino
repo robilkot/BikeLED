@@ -5,7 +5,7 @@ const uint8_t LedPin = 9;
 const uint8_t LedCount = 120;
 const uint8_t TransitionSpeed = 30;
 
-const uint8_t TachoPin = A0;
+const uint8_t TachoPin = 4;
 const uint16_t SpeedMeasureInterval = 900;
 const float WheelRadius = 0.255; // Diameter ~510 mm
 
@@ -18,14 +18,25 @@ void setup()
   pinMode(LedPin, OUTPUT);
   pinMode(TachoPin, INPUT_PULLUP);
 
-  FastLED.addLeds<WS2812B, LedPin, GRB>(leds, LedCount).setCorrection(TypicalLEDStrip);
-  FastLED.setMaxPowerInVoltsAndMilliamps(5,2100); 
-  FastLED.setBrightness(20);
+  // Disable the ADC by setting the ADEN bit (bit 7) to 0
+  ADCSRA &= B01111111;
 
-  Serial.begin(57600);
-  Serial.setTimeout(10);
+  // Disable the analog comparator by setting the ACD bit
+  // (bit 7) of the ACSR register to 1.
+  ACSR |= B10000000;
+
+  // Disable digital input buffers on all analog input pins
+  // by setting bits 0-5 of the DIDR0 register to 1.
+  DIDR0 = DIDR0 | B00111111;
+
+  FastLED.addLeds<WS2812B, LedPin, GRB>(leds, LedCount).setCorrection(TypicalLEDStrip);
+  FastLED.setMaxPowerInVoltsAndMilliamps(5,1700); 
+  FastLED.setBrightness(35);
 
   random16_set_seed(analogRead(A1)); // Get noise from not connected A1
+
+  // Serial.begin(57600);
+  // Serial.setTimeout(10);
 }
 
 void shiftLeds()
@@ -53,7 +64,7 @@ void updateLights(uint16_t speed)
 
   if(transitionCounter) {
     shiftLeds();
-    leds[0].fadeToBlackBy(TransitionSpeed);
+    for(auto& x : leds) x.fadeToBlackBy(TransitionSpeed);
     transitionCounter.fadeToBlackBy(TransitionSpeed);
   }
     // STASH
@@ -65,27 +76,35 @@ void updateLights(uint16_t speed)
   if(idleMode)
   { 
   // Serial.println("idle");
-    for(uint8_t i = 0; i < 3; i++) {
-      shiftLeds();
+    //for(uint8_t i = 0; i < 3; i++) {
+    // shiftLeds();
       uint16_t value = sin1 * RedAmplitude / 255  + 255 - RedAmplitude;
-      leds[0] = CHSV(0, 255, value);
-    }
+      for(auto& x : leds)
+        x = CHSV(0, 255, value);
+    //}
     //float k = 255 - transitionCounter.r;
     //for(auto& x : leds) x = toFill % k;
   }
   else {
     // Serial.println("ride");
-    shiftLeds();
-    uint8_t hue = sin8(waveArg1 * (float) speed / 500) * 80 / 255 + 70;
-    leds[0] = CHSV(hue, 255, 180 );
+    // shiftLeds();
+    // uint8_t hue = sin8(waveArg1 * (float) speed / 500) * 80 / 255 + 70;
+    // leds[0] = CHSV(hue, 255, 180);
     // leds[0] = CHSV( sin8(waveArg1) * 80 / 255 + 70, 255, 180 );
 
     // Splashes
     // leds[random16(0, LedCount)] = CHSV(random16(0, 256), 255, random16(150, 256) * (255 - transitionCounter.r) / 255.);
     // blur1d(leds, LedCount, 160);
     // for(auto& x : leds) x.fadeToBlackBy(2);
+    fill_rainbow(leds, LedCount, waveArg1);
   }
 
+  for(uint8_t i = 0; i <= 2; i++)
+    leds[i] = CHSV(0,0,255);
+  for(uint8_t i = 117; i <= 119; i++)
+    leds[i] = CHSV(0,0,255);
+  for(uint8_t i = 57; i <= 61; i++)
+    leds[i] = CHSV(0,0,255);
 
   waveArg1++;
 
@@ -106,7 +125,7 @@ int getSpeed()
                   v = 0;
 
   triggerPrev = trigger;
-  trigger = analogRead(TachoPin) < 100;
+  trigger = digitalRead(TachoPin) == 0;
   
   if(trigger && !triggerPrev) { // When falling from 1 (pull-up resistor) to 0
     rotations++;
@@ -148,7 +167,6 @@ int getSpeed()
 
 void loop()
 {
-
   // if(Serial.available()) {
   //   speed = Serial.parseInt();
   //   Serial.print("speed ");
