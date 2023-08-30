@@ -1,15 +1,21 @@
 #include <FastLED.h>
 #include <TimerMs.h>
 
-const uint8_t LedPin = 9;
+//#define DEBUG
+
+#ifdef DEBUG
+const uint8_t LedCount = 4;
+#else
 const uint8_t LedCount = 120;
+#endif
+const uint8_t LedPin = 9;
 const uint8_t TransitionSpeed = 30;
 
 const uint8_t TachoPin = 4;
 const uint16_t SpeedMeasureInterval = 900;
 const float WheelRadius = 0.255; // Diameter ~510 mm
 
-const uint8_t RedAmplitude = 200;
+const uint8_t RedAmplitude = 170;
 
 CRGB leds[LedCount];
 
@@ -27,84 +33,50 @@ void setup()
 
   // Disable digital input buffers on all analog input pins
   // by setting bits 0-5 of the DIDR0 register to 1.
-  DIDR0 = DIDR0 | B00111111;
+  DIDR0 |= B00111111;
 
   FastLED.addLeds<WS2812B, LedPin, GRB>(leds, LedCount).setCorrection(TypicalLEDStrip);
   FastLED.setMaxPowerInVoltsAndMilliamps(5,1700); 
   FastLED.setBrightness(35);
 
-  random16_set_seed(analogRead(A1)); // Get noise from not connected A1
+  //random16_set_seed(analogRead(A1)); // Get noise from not connected A1
 
-  // Serial.begin(57600);
-  // Serial.setTimeout(10);
-}
-
-void shiftLeds()
-{
-  for(uint8_t i = LedCount - 1; i >= 1; i--) {
-    leds[i] = leds[i-1];
-  }
+  Serial.begin(57600);
+  Serial.setTimeout(10);
 }
 
 void updateLights(uint16_t speed)
 {
-  static bool idleMode = true;
   static uint8_t waveArg1 = 0;
-  static CRGB transitionCounter(255,255,255);
+  static uint8_t transitionCounter = 0;
 
   if(speed > 20) {
-    if(idleMode) transitionCounter = CRGB(255,255,255);
-    idleMode = false;
+    if(transitionCounter < 254) transitionCounter += 2;
   } else {
-    if(!idleMode) transitionCounter = CRGB(255,255,255);
-    idleMode = true;
+    if(transitionCounter > 1) transitionCounter -= 2;
   }
 
   uint8_t sin1 = sin8(waveArg1);
-
-  if(transitionCounter) {
-    shiftLeds();
-    for(auto& x : leds) x.fadeToBlackBy(TransitionSpeed);
-    transitionCounter.fadeToBlackBy(TransitionSpeed);
-  }
-    // STASH
-    // CRGB color1 = Red1 + CRGB(0, 50 * fabs((sin8(waveArg += 2)) / 255.), 0);
-    // fill_gradient_RGB(leds, LedCount, color1, color2);
-    // fill_solid(leds, LedCount, CHSV( 0, sin8(waveArg) / 2 + 100, sin8(waveArg) / 2 + 100 ));
-    // blur1d(leds,LedCount, 120);
-
-  if(idleMode)
-  { 
-  // Serial.println("idle");
-    //for(uint8_t i = 0; i < 3; i++) {
-    // shiftLeds();
-      uint16_t value = sin1 * RedAmplitude / 255  + 255 - RedAmplitude;
-      for(auto& x : leds)
-        x = CHSV(0, 255, value);
-    //}
-    //float k = 255 - transitionCounter.r;
-    //for(auto& x : leds) x = toFill % k;
-  }
-  else {
-    // Serial.println("ride");
-    // shiftLeds();
-    // uint8_t hue = sin8(waveArg1 * (float) speed / 500) * 80 / 255 + 70;
-    // leds[0] = CHSV(hue, 255, 180);
-    // leds[0] = CHSV( sin8(waveArg1) * 80 / 255 + 70, 255, 180 );
-
-    // Splashes
-    // leds[random16(0, LedCount)] = CHSV(random16(0, 256), 255, random16(150, 256) * (255 - transitionCounter.r) / 255.);
-    // blur1d(leds, LedCount, 160);
-    // for(auto& x : leds) x.fadeToBlackBy(2);
-    fill_rainbow(leds, LedCount, waveArg1);
+  uint16_t redValue = (uint16_t)sin1 * RedAmplitude / 255  + 255 - RedAmplitude;
+   
+  for(uint8_t i = 0; i < LedCount; i++) {
+    if(transitionCounter > 150) {
+      leds[i] = CHSV(waveArg1 + i, 255, (transitionCounter - 150) * 2.42);
+    } else
+    if (transitionCounter < 90) {       
+      leds[i] = CHSV(0, 255, redValue * (90 - transitionCounter) / 90.);
+    }
   }
 
-  for(uint8_t i = 0; i <= 2; i++)
+#ifndef DEBUG
+  for(uint8_t i = 0; i <= 1; i++) // 1st bottom light
     leds[i] = CHSV(0,0,255);
-  for(uint8_t i = 117; i <= 119; i++)
+  for(uint8_t i = 118; i <= 119; i++) // 2nd bottom light
     leds[i] = CHSV(0,0,255);
-  for(uint8_t i = 57; i <= 61; i++)
+
+  for(uint8_t i = 57; i <= 61; i++) // headlight
     leds[i] = CHSV(0,0,255);
+#endif
 
   waveArg1++;
 
@@ -142,6 +114,8 @@ int getSpeed()
     v1 = 2 * PI * WheelRadius * dRotations * 1000 / SpeedMeasureInterval * 36; // In km/h
     v = (v1 + v2 + v3 + v4) / 4;
     if(v < 15) v4 = v3 = v2 = v1 = v = 0;
+
+    #ifdef DEBUG
     // Serial.print(v1);
     // Serial.print(" ");
     // Serial.print(v2);
@@ -151,6 +125,7 @@ int getSpeed()
     // Serial.print(v4);
     // Serial.print(" ");
     // Serial.println(v);
+    #endif
 
     if(rotations > 65000) { // Overflow protection for correct maths on dRotations
       rotations = dRotations;
@@ -167,16 +142,18 @@ int getSpeed()
 
 void loop()
 {
-  // if(Serial.available()) {
-  //   speed = Serial.parseInt();
-  //   Serial.print("speed ");
-  //   Serial.println(speed);  
-  // }
-
   static TimerMs updateLightsTimer(10, 1, 1);
   static uint16_t speed = 0;
 
+  #ifdef DEBUG
+  if(Serial.available()) {
+    speed = Serial.parseInt();
+    Serial.print("speed ");
+    Serial.println(speed);  
+  }
+  #else
   speed = getSpeed();
+  #endif
 
   if(updateLightsTimer.elapsed()) {
     updateLights(speed);
